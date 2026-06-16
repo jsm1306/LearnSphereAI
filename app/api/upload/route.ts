@@ -54,12 +54,13 @@ export async function POST(request: NextRequest) {
       bytes: buffer.byteLength,
     });
 
-    const { pageCount, text } = await extractPdfText(buffer);
+    const { pageCount, text, pages } = await extractPdfText(buffer);
 
     return Response.json({
       success: true,
       pageCount,
       text,
+      pages,
       requestId,
     });
   } catch (error) {
@@ -84,5 +85,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
 

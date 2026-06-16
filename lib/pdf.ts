@@ -1,13 +1,27 @@
 import PDFParser from "pdf2json";
 
+export type PdfPage = {
+  pageNumber: number;
+  text: string;
+};
+
 export interface ExtractedPdf {
   pageCount: number;
+  pages: PdfPage[];
+  // Backward-compatible concatenated text (used by summary/quiz/recommendations)
   text: string;
 }
 
-export async function extractPdfText(
-  buffer: Buffer
-): Promise<ExtractedPdf> {
+function extractPageText(page: any): string {
+  return (page?.Texts || [])
+    .flatMap((t: any) => (t?.R || []).map((r: any) => decodeURIComponent(r?.T || "")))
+    .join(" ")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+export async function extractPdfText(buffer: Buffer): Promise<ExtractedPdf> {
   return new Promise((resolve, reject) => {
     const parser = new PDFParser();
 
@@ -17,22 +31,22 @@ export async function extractPdfText(
 
     parser.on("pdfParser_dataReady", (pdfData) => {
       try {
-        const pages = pdfData.Pages || [];
+        const pages = (pdfData as any)?.Pages || [];
 
-        const text = pages
-          .map((page: any) =>
-            (page.Texts || [])
-              .flatMap((t: any) =>
-                (t.R || []).map((r: any) =>
-                  decodeURIComponent(r.T || "")
-                )
-              )
-              .join(" ")
-          )
+        const extractedPages: PdfPage[] = pages.map((page: any, idx: number) => {
+          const pageNumber = idx + 1;
+          const text = extractPageText(page);
+          return { pageNumber, text };
+        });
+
+        const text = extractedPages
+          .map((p) => p.text)
+          .filter((t) => t && t.trim().length > 0)
           .join("\n\n");
 
         resolve({
-          pageCount: pages.length,
+          pageCount: extractedPages.length,
+          pages: extractedPages,
           text,
         });
       } catch (err) {
@@ -43,3 +57,4 @@ export async function extractPdfText(
     parser.parseBuffer(buffer);
   });
 }
+
