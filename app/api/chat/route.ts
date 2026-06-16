@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { generateAIResponse } from "@/lib/ai";
+import { retrieveRelevantPages } from "@/lib/retrieval";
 
 export const runtime = "nodejs";
 
@@ -20,64 +21,6 @@ export interface Citation {
 export interface ChatResponse {
   answer: string;
   citations: Citation[];
-}
-
-function tokenize(s: string): string[] {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .map((t) => t.trim())
-    .filter(Boolean);
-}
-
-function scorePage(pageText: string, question: string): number {
-  const qTokens = tokenize(question);
-  if (qTokens.length === 0) return 0;
-
-  const pTokens = tokenize(pageText);
-  if (pTokens.length === 0) return 0;
-
-  const pSet = new Set(pTokens);
-
-  let hit = 0;
-  let exact = 0;
-
-  for (const qt of qTokens) {
-    if (pSet.has(qt)) hit += 1;
-    if (qt.length >= 6 && pSet.has(qt)) exact += 1;
-  }
-
-  return hit + exact * 0.5;
-}
-
-function selectRelevantPages(pages: PdfPage[], question: string) {
-  const scored = pages
-    .map((p) => ({ page: p, score: scorePage(p.text, question) }))
-    .sort((a, b) => b.score - a.score);
-
-  const bestScore = scored[0]?.score ?? 0;
-  const hasSignal = bestScore >= 2;
-
-  if (!hasSignal) {
-    return { selected: [] as PdfPage[], citations: [] as Citation[] };
-  }
-
-  const topN = Math.min(4, scored.length);
-  const selected = scored
-    .slice(0, topN)
-    .filter((x) => x.score > 0)
-    .map((x) => x.page);
-
-  const uniq = new Map<number, PdfPage>();
-  for (const p of selected) uniq.set(p.pageNumber, p);
-
-  const finalPages = Array.from(uniq.values()).sort(
-    (a, b) => a.pageNumber - b.pageNumber
-  );
-
-  const citations: Citation[] = finalPages.map((p) => ({ pageNumber: p.pageNumber }));
-  return { selected: finalPages, citations };
 }
 
 export async function POST(request: NextRequest) {
@@ -126,17 +69,32 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { selected, citations } = selectRelevantPages(sanitizedPages, question);
+    // 1. Retrieve the top 3 most relevant pages
+    const selected = retrieveRelevantPages(question, sanitizedPages);
+    
+    // 2. Build citations list
+    const citations: Citation[] = selected.map((p) => ({ pageNumber: p.pageNumber }));
 
-    // If no relevant pages found, answer using the full concatenated text.
-    // Requirement #6: frontend displays "Document-wide answer" when citations is empty.
-    const documentText = selected.length
-      ? selected.map((p) => `Page ${p.pageNumber}: ${p.text}`).join("\n\n")
-      : sanitizedPages.map((p) => p.text).join("\n\n");
+    // 3. Build context containing only the retrieved pages
+    const documentText = selected
+      .map((p) => `Page ${p.pageNumber}:\n${p.text}`)
+      .join("\n\n");
 
-    const systemPrompt = `You are a study assistant.\n\nUse only the provided study material to answer the student's question.\n\nIf the answer cannot be found in the study material, clearly state that the information is not available in the provided document.\n\nProvide clear, concise, and educational answers.`;
+    const systemPrompt = `You are a study assistant.
 
-    const userPrompt = `Study Material:\n${documentText}\n\nStudent Question:\n${question}\n\nPlease provide a clear educational answer based only on the study material provided above.`;
+Use only the provided study material to answer the student's question.
+
+If the answer is not present in the provided study material, you must reply with exactly: "I could not find this information in the uploaded document."
+
+Do not use external knowledge or make assumptions outside the provided study material. Provide clear, concise, and educational answers.`;
+
+    const userPrompt = `Study Material:
+${documentText}
+
+Student Question:
+${question}
+
+Please provide a clear educational answer based only on the study material provided above.`;
 
     const prompt = `${systemPrompt}\n\n${userPrompt}`;
 
@@ -165,4 +123,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

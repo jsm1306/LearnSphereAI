@@ -156,18 +156,7 @@ export default function ChatPage() {
   const renderSources = (citations?: ChatCitation[]) => {
     const items = Array.isArray(citations) ? citations : [];
 
-    if (!items.length) {
-      return (
-        <div className="mt-3 flex items-center gap-2 text-[10px] text-slate-500 font-semibold uppercase tracking-wider">
-          <span className="rounded bg-emerald-50 px-2 py-0.5 text-emerald-700 border border-emerald-100">
-            Source
-          </span>
-          <span>Document-wide answer</span>
-        </div>
-      );
-    }
-
-    // Filter duplicates and take top 2
+    // Filter duplicates
     const seen = new Set<number>();
     const uniqueInOrder: number[] = [];
 
@@ -176,22 +165,37 @@ export default function ChatPage() {
         seen.add(c.pageNumber);
         uniqueInOrder.push(c.pageNumber);
       }
-      if (uniqueInOrder.length >= 2) break;
     }
 
     return (
-      <div className="mt-3.5 pt-3 border-t border-emerald-100/50">
-        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Citations</span>
-        <div className="flex flex-wrap gap-2 mt-1.5">
-          {uniqueInOrder.map((p) => (
-            <span
-              key={p}
-              className="inline-flex items-center gap-1 rounded-xl bg-indigo-50 border border-indigo-100 px-3 py-1.5 text-xs font-semibold text-indigo-700"
-            >
-              <FileText className="h-3 w-3" />
-              Page {p}
+      <div className="mt-3.5 pt-3 border-t border-emerald-100/50 flex flex-col gap-2.5">
+        <div className="flex items-center gap-2">
+          {/* Smart Search Active Badge */}
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 text-[10px] font-bold text-indigo-700 uppercase tracking-wide">
+            <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+            Smart Search Active
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap text-xs font-semibold text-slate-500">
+          <span>Sources:</span>
+          {uniqueInOrder.length === 0 ? (
+            <span className="inline-flex items-center rounded-lg bg-slate-50 border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600">
+              Document-wide answer
             </span>
-          ))}
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {uniqueInOrder.map((p) => (
+                <span
+                  key={p}
+                  className="inline-flex items-center gap-1 rounded-lg bg-blue-50 border border-blue-100 px-2.5 py-1 text-xs font-bold text-blue-700 transition hover:bg-blue-100/60"
+                >
+                  <FileText className="h-3 w-3 text-blue-500" />
+                  Page {p}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     );
