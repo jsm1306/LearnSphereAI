@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import ProtectedShell from "@/lib/protected-shell";
 
 interface ChatMessage {
   id: string;
@@ -18,6 +19,7 @@ interface QuizQuestion {
 export default function UploadPage() {
   // Upload state
   const [file, setFile] = useState<File | null>(null);
+
   const [documentText, setDocumentText] = useState<string>("");
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [uploadLoading, setUploadLoading] = useState(false);
@@ -311,15 +313,15 @@ export default function UploadPage() {
 
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 py-12 px-6 sm:px-10">
-      <div className="mx-auto w-full max-w-4xl space-y-8">
-        {/* Header */}
+    <ProtectedShell>
+      <div className="space-y-8">
         <div>
           <h1 className="text-4xl font-bold text-slate-900">PDF Study Assistant</h1>
           <p className="mt-2 text-lg text-slate-600">
             Upload a PDF and ask questions about its content using AI.
           </p>
         </div>
+
 
         {/* Upload Card */}
         <div className="rounded-3xl bg-white p-8 shadow-lg shadow-slate-200/80">
@@ -722,7 +724,9 @@ export default function UploadPage() {
           </div>
         ) : null}
       </div>
-    </div>
+    </ProtectedShell>
   );
 }
+
+
 
