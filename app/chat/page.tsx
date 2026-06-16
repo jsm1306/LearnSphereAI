@@ -9,6 +9,9 @@ import {
   trackQuestionAsked, 
   ActiveDoc 
 } from "@/lib/tracker";
+import { getStudentLearningProfile } from "@/lib/student-profile";
+
+
 import { 
   MessageSquare, 
   Send, 
@@ -25,16 +28,24 @@ interface ChatCitation {
   pageNumber: number;
 }
 
+interface ChatMetrics {
+  retrievalTime: number;
+  generationTime: number;
+  totalTime: number;
+}
+
 interface ChatMessage {
   id: string;
   question: string;
   answer: string;
   citations?: ChatCitation[];
   timestamp: number;
+  metrics?: ChatMetrics;
 }
 
 export default function ChatPage() {
-  const [mounted, setMounted] = useState(false);
+  const [mounted, setMounted] = useState(true);
+
   const [activeDoc, setActiveDoc] = useState<ActiveDoc | null>(null);
   const [question, setQuestion] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -45,7 +56,8 @@ export default function ChatPage() {
 
   // Load active doc and cached chat history
   useEffect(() => {
-    setMounted(true);
+    // Avoid setState cascades flagged by eslint; mounted becomes true naturally in the client render.
+
     const doc = getActiveDoc();
     setActiveDoc(doc);
     
@@ -80,6 +92,7 @@ export default function ChatPage() {
   }, [chatMessages, chatLoading]);
 
   if (!mounted) {
+
     return (
       <ProtectedShell>
         <div className="space-y-6 animate-pulse">
@@ -107,14 +120,23 @@ export default function ChatPage() {
 
     try {
       setChatLoading(true);
+      const studentProfile = getStudentLearningProfile();
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           pages: activeDoc.pages,
           question: question.trim(),
+          studentProfile: {
+            weakTopics: studentProfile.weakTopics,
+            averageScore: studentProfile.averageScore,
+            quizHistory: studentProfile.quizHistory,
+            questionsAsked: studentProfile.questionsAsked,
+          },
         }),
       });
+
 
       if (!response.ok) {
         const body = await response.json().catch(() => null);
@@ -133,6 +155,7 @@ export default function ChatPage() {
         answer: data.answer,
         citations: Array.isArray(data.citations) ? data.citations : [],
         timestamp: Date.now(),
+        metrics: data.metrics || undefined,
       };
 
       setChatMessages((prev) => [...prev, newMessage]);
@@ -153,7 +176,9 @@ export default function ChatPage() {
     }
   };
 
-  const renderSources = (citations?: ChatCitation[]) => {
+  const renderMessageDetails = (message: ChatMessage) => {
+
+    const { citations, metrics } = message;
     const items = Array.isArray(citations) ? citations : [];
 
     // Filter duplicates
@@ -168,15 +193,19 @@ export default function ChatPage() {
     }
 
     return (
-      <div className="mt-3.5 pt-3 border-t border-emerald-100/50 flex flex-col gap-2.5">
-        <div className="flex items-center gap-2">
-          {/* Smart Search Active Badge */}
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 text-[10px] font-bold text-indigo-700 uppercase tracking-wide">
+      <div className="mt-3.5 pt-3 border-t border-emerald-100/50 flex flex-col gap-3">
+        {/* Indicators */}
+        <div className="flex flex-wrap gap-2">
+          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 text-[10px] font-bold text-indigo-700 uppercase tracking-wide">
             <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
-            Smart Search Active
+            ⚡ Smart Retrieval Active
+          </span>
+          <span className="inline-flex items-center rounded-full bg-blue-50 border border-blue-100 px-2.5 py-0.5 text-[10px] font-bold text-blue-700 uppercase tracking-wide">
+            RAG Pipeline Active
           </span>
         </div>
 
+        {/* Sources */}
         <div className="flex items-center gap-2 flex-wrap text-xs font-semibold text-slate-500">
           <span>Sources:</span>
           {uniqueInOrder.length === 0 ? (
@@ -197,6 +226,30 @@ export default function ChatPage() {
             </div>
           )}
         </div>
+
+        {/* Performance Metrics Cards */}
+        {metrics && (
+          <div className="grid grid-cols-3 gap-2.5 rounded-2xl bg-emerald-950/5 border border-emerald-900/5 p-3 text-slate-700 mt-1">
+            <div className="text-center">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">⏱ Response Time</span>
+              <span className="text-xs font-extrabold text-slate-800">
+                {(metrics.totalTime / 1000).toFixed(1)}s
+              </span>
+            </div>
+            <div className="text-center border-x border-slate-200/50">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">🔎 Retrieval</span>
+              <span className="text-xs font-extrabold text-slate-800">
+                {(metrics.retrievalTime / 1000).toFixed(1)}s
+              </span>
+            </div>
+            <div className="text-center">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">🤖 AI Generation</span>
+              <span className="text-xs font-extrabold text-slate-800">
+                {(metrics.generationTime / 1000).toFixed(1)}s
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -233,7 +286,7 @@ export default function ChatPage() {
 
         {/* Chat Workspace */}
         {!activeDoc ? (
-          <div className="flex-1 flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center">
+          <div className="flex-1 flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center py-12">
             <div className="rounded-2xl bg-amber-50 p-3 text-amber-600 mb-4 animate-pulse">
               <AlertTriangle className="h-10 w-10" />
             </div>
@@ -296,7 +349,7 @@ export default function ChatPage() {
                             <div className="prose prose-emerald prose-sm max-w-none text-emerald-950 prose-headings:text-emerald-900 prose-strong:text-emerald-950 prose-headings:font-bold prose-code:text-indigo-600 leading-relaxed">
                               <ReactMarkdown>{msg.answer}</ReactMarkdown>
                             </div>
-                            {renderSources(msg.citations)}
+                            {renderMessageDetails(msg)}
                           </div>
                         </div>
                       </div>

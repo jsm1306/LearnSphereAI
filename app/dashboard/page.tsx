@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import ProtectedShell from "@/lib/protected-shell";
+import { getStudentLearningProfile, getLearningLevelFromProfile } from "@/lib/student-profile";
+
 import { 
   getTrackerStats, 
   getActiveDoc, 
@@ -74,6 +76,13 @@ export default function DashboardPage() {
     ? (stats.totalCorrectQuizAnswers / stats.totalQuizQuestions) * 100 
     : 0;
 
+  // Personalized learning profile (localStorage-based)
+  const profile = getStudentLearningProfile();
+  const learningLevel = getLearningLevelFromProfile(profile);
+
+
+
+
   // Prepare chart data (last 7 quiz attempts, chronological)
   const lastAttempts = stats.quizHistory.slice(0, 7).reverse();
 
@@ -116,8 +125,46 @@ export default function DashboardPage() {
           </Link>
         </div>
 
+        {/* Personalized Learning Mode Card */}
+        <div className="rounded-3xl border border-indigo-100/80 bg-white p-6 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 rounded-2xl bg-indigo-50 border border-indigo-100 px-4 py-2">
+                <BrainCircuit className="h-5 w-5 text-indigo-600" />
+                <span className="text-xs font-extrabold text-indigo-700 uppercase tracking-wider">
+                  Personalized Learning Mode Active
+                </span>
+              </div>
+              <div className="flex items-center gap-3 mt-1">
+                <span className="text-sm font-bold text-slate-900">Current Learning Level:</span>
+                <span className="text-sm font-extrabold text-indigo-700">{learningLevel}</span>
+              </div>
+              <div className="text-xs text-slate-500">
+                Weak Areas:
+                {profile.weakTopics.length > 0 ? (
+                  <span className="font-semibold text-slate-700"> {profile.weakTopics.join(", ")}</span>
+                ) : (
+                  <span className="font-semibold text-emerald-700"> (none detected yet)</span>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Average Score</div>
+                <div className="mt-1 text-2xl font-extrabold text-slate-900">{profile.averageScore.toFixed(0)}%</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Questions Asked</div>
+                <div className="mt-1 text-2xl font-extrabold text-slate-900">{profile.questionsAsked}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Stats Cards Grid */}
         <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
+
           {/* Documents Card */}
           <div className="rounded-3xl border border-slate-200/60 bg-white p-5 shadow-sm flex flex-col justify-between hover:shadow transition">
             <div className="flex items-center justify-between">
