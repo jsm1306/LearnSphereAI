@@ -9,6 +9,12 @@ interface ChatMessage {
   answer: string;
 }
 
+interface QuizQuestion {
+  question: string;
+  options: string[];
+  correctAnswer: string;
+}
+
 export default function UploadPage() {
   // Upload state
   const [file, setFile] = useState<File | null>(null);
@@ -28,6 +34,14 @@ export default function UploadPage() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
 
+  // Quiz state
+  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
+  const [quizLoading, setQuizLoading] = useState(false);
+  const [quizError, setQuizError] = useState<string | null>(null);
+  const [userAnswers, setUserAnswers] = useState<{ [key: number]: string }>({});
+  const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [quizScore, setQuizScore] = useState<number>(0);
+
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setUploadError(null);
     const nextFile = event.target.files?.[0] ?? null;
@@ -42,6 +56,10 @@ export default function UploadPage() {
     setChatMessages([]);
     setSummary("");
     setSummaryError(null);
+    setQuizQuestions([]);
+    setUserAnswers({});
+    setQuizSubmitted(false);
+    setQuizError(null);
 
     if (!file) {
       setUploadError("Please select a PDF file before uploading.");
@@ -167,6 +185,67 @@ export default function UploadPage() {
     }
   };
 
+  const handleGenerateQuiz = async () => {
+    setQuizError(null);
+    setQuizQuestions([]);
+    setUserAnswers({});
+    setQuizSubmitted(false);
+
+    if (!documentText) {
+      setQuizError("Upload a PDF before generating a quiz.");
+      return;
+    }
+
+    try {
+      setQuizLoading(true);
+      const response = await fetch("/api/quiz", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentText,
+        }),
+      });
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error ?? "Failed to generate quiz");
+      }
+
+      const data = await response.json();
+
+      if (!data.questions || !Array.isArray(data.questions)) {
+        throw new Error("Invalid quiz format received");
+      }
+
+      setQuizQuestions(data.questions);
+    } catch (caught) {
+      setQuizError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setQuizLoading(false);
+    }
+  };
+
+  const handleSubmitQuiz = () => {
+    let score = 0;
+
+    quizQuestions.forEach((q, index) => {
+      if (userAnswers[index] === q.correctAnswer) {
+        score += 1;
+      }
+    });
+
+    setQuizScore(score);
+    setQuizSubmitted(true);
+  };
+
+  const resetQuiz = () => {
+    setQuizQuestions([]);
+    setUserAnswers({});
+    setQuizSubmitted(false);
+    setQuizScore(0);
+    setQuizError(null);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 py-12 px-6 sm:px-10">
       <div className="mx-auto w-full max-w-4xl space-y-8">
@@ -230,13 +309,24 @@ export default function UploadPage() {
                     ) : null}
                   </div>
                 </div>
-                <button
-                  onClick={handleGenerateSummary}
-                  disabled={summaryLoading || !documentText}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {summaryLoading ? "Generating…" : "Generate Summary"}
-                </button>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleGenerateSummary}
+                    disabled={summaryLoading || !documentText}
+                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {summaryLoading ? "Generating…" : "Generate Summary"}
+                  </button>
+                  {quizQuestions.length === 0 && (
+                    <button
+                      onClick={handleGenerateQuiz}
+                      disabled={quizLoading || !documentText}
+                      className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {quizLoading ? "Generating…" : "Generate Quiz"}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ) : null}
@@ -355,6 +445,138 @@ export default function UploadPage() {
                 </div>
               ) : null}
             </div>
+          </div>
+        ) : null}
+
+        {/* Quiz Section */}
+        {documentText ? (
+          <div className="rounded-3xl bg-white p-8 shadow-lg shadow-slate-200/80">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-semibold text-slate-900">Quiz</h2>
+                <p className="mt-2 text-sm text-slate-600">
+                  Test your knowledge with AI-generated questions.
+                </p>
+              </div>
+              {!quizQuestions.length && (
+                <button
+                  onClick={handleGenerateQuiz}
+                  disabled={quizLoading || !documentText}
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {quizLoading ? "Generating…" : "Generate Quiz"}
+                </button>
+              )}
+            </div>
+
+            {quizError ? (
+              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                {quizError}
+              </div>
+            ) : null}
+
+            {quizQuestions.length > 0 && !quizSubmitted ? (
+              <div className="mt-6 space-y-6">
+                {quizQuestions.map((q, index) => (
+                  <div key={index} className="rounded-2xl border border-indigo-200 bg-indigo-50 p-6">
+                    <h3 className="text-lg font-semibold text-indigo-900">
+                      Question {index + 1}: {q.question}
+                    </h3>
+                    <div className="mt-4 space-y-3">
+                      {q.options.map((option, optIndex) => (
+                        <label key={optIndex} className="flex items-center gap-3 cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`question-${index}`}
+                            value={option}
+                            checked={userAnswers[index] === option}
+                            onChange={() =>
+                              setUserAnswers({ ...userAnswers, [index]: option })
+                            }
+                            className="h-4 w-4 text-indigo-600"
+                          />
+                          <span className="text-sm text-indigo-900">{option}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  onClick={handleSubmitQuiz}
+                  disabled={Object.keys(userAnswers).length !== quizQuestions.length}
+                  className="w-full rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Submit Quiz
+                </button>
+              </div>
+            ) : quizSubmitted ? (
+              <div className="mt-6 space-y-6">
+                <div className="rounded-2xl bg-gradient-to-r from-indigo-50 to-purple-50 p-8 text-center">
+                  <p className="text-sm font-medium text-slate-600">Quiz Score</p>
+                  <p className="mt-2 text-5xl font-bold text-indigo-600">
+                    {quizScore}/{quizQuestions.length}
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-slate-900">
+                    {((quizScore / quizQuestions.length) * 100).toFixed(0)}%
+                  </p>
+                </div>
+
+                {quizQuestions.map((q, index) => {
+                  const userAnswer = userAnswers[index];
+                  const isCorrect = userAnswer === q.correctAnswer;
+
+                  return (
+                    <div
+                      key={index}
+                      className={`rounded-2xl border-2 p-6 ${
+                        isCorrect
+                          ? "border-emerald-200 bg-emerald-50"
+                          : "border-red-200 bg-red-50"
+                      }`}
+                    >
+                      <h3 className={`text-lg font-semibold ${
+                        isCorrect ? "text-emerald-900" : "text-red-900"
+                      }`}>
+                        Question {index + 1}: {q.question}
+                      </h3>
+                      <div className="mt-4 space-y-2">
+                        <p className={`text-sm ${
+                          isCorrect ? "text-emerald-700" : "text-red-700"
+                        }`}>
+                          <span className="font-semibold">Your answer:</span> {userAnswer}
+                          {isCorrect && " ✓"}
+                        </p>
+                        {!isCorrect && (
+                          <p className="text-sm font-semibold text-emerald-700">
+                            <span>Correct answer:</span> {q.correctAnswer}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <button
+                  onClick={resetQuiz}
+                  className="w-full rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                >
+                  Retake Quiz
+                </button>
+              </div>
+            ) : quizLoading ? (
+              <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center text-slate-600">
+                <div className="flex items-center justify-center gap-2">
+                  <div className="h-2 w-2 animate-pulse rounded-full bg-slate-400"></div>
+                  <div className="h-2 w-2 animate-pulse rounded-full bg-slate-400 delay-100"></div>
+                  <div className="h-2 w-2 animate-pulse rounded-full bg-slate-400 delay-200"></div>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center text-slate-600">
+                <p>Click "Generate Quiz" to create a quiz from the PDF.</p>
+              </div>
+            )}
           </div>
         ) : null}
       </div>
