@@ -1,9 +1,7 @@
 import type { NextRequest } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { generateAIResponse } from "@/lib/ai";
 
 export const runtime = "nodejs";
-
-const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 export interface SummaryRequest {
   documentText: string;
@@ -14,13 +12,6 @@ export interface SummaryResponse {
 }
 
 export async function POST(request: NextRequest) {
-  if (!process.env.GEMINI_API_KEY) {
-    return Response.json(
-      { error: "GEMINI_API_KEY is not configured" },
-      { status: 500 }
-    );
-  }
-
   let body: SummaryRequest;
 
   try {
@@ -42,8 +33,6 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const model = client.getGenerativeModel({ model: "gemini-2.5-flash" });
-
     const systemPrompt = `You are an expert study assistant that creates structured summaries for learning.
 
 Create comprehensive study summaries that are well-organized and easy to understand.
@@ -65,28 +54,19 @@ Organize the summary with these sections:
 
 Use bullet points and numbered lists for clarity. Make it concise but comprehensive.`;
 
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: userPrompt }],
-        },
-      ],
-      systemInstruction: systemPrompt,
-    });
+    const prompt = `${systemPrompt}\n\n${userPrompt}`;
 
-    const responseText =
-      result.response.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const result = await generateAIResponse(prompt);
 
-    if (!responseText) {
+    if (!result.text) {
       return Response.json(
-        { error: "Failed to generate summary from Gemini" },
+        { error: "Failed to generate summary" },
         { status: 500 }
       );
     }
 
     const response: SummaryResponse = {
-      summary: responseText,
+      summary: result.text,
     };
 
     return Response.json(response);
@@ -100,3 +80,4 @@ Use bullet points and numbered lists for clarity. Make it concise but comprehens
     );
   }
 }
+

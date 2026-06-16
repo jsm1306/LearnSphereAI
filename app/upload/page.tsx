@@ -42,6 +42,14 @@ export default function UploadPage() {
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [quizScore, setQuizScore] = useState<number>(0);
 
+  // Recommendations state
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
+  const [weakAreas, setWeakAreas] = useState<string[]>([]);
+  const [revisionTopics, setRevisionTopics] = useState<string[]>([]);
+  const [studyPlan, setStudyPlan] = useState<string[]>([]);
+
+
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setUploadError(null);
     const nextFile = event.target.files?.[0] ?? null;
@@ -244,7 +252,63 @@ export default function UploadPage() {
     setQuizSubmitted(false);
     setQuizScore(0);
     setQuizError(null);
+
+    setRecommendationsLoading(false);
+    setRecommendationsError(null);
+    setWeakAreas([]);
+    setRevisionTopics([]);
+    setStudyPlan([]);
   };
+
+  const handleGetRecommendations = async () => {
+    setRecommendationsError(null);
+    setWeakAreas([]);
+    setRevisionTopics([]);
+    setStudyPlan([]);
+
+    if (!documentText || !quizQuestions.length) {
+      setRecommendationsError("Generate and submit a quiz before requesting recommendations.");
+      return;
+    }
+
+    const incorrectQuestions = quizQuestions
+      .map((q, index) => ({ q, index }))
+      .filter(({ q, index }) => userAnswers[index] !== q.correctAnswer)
+      .map(({ q }) => q.question);
+
+    try {
+      setRecommendationsLoading(true);
+
+      const response = await fetch("/api/recommendations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentText,
+          score: quizScore,
+          totalQuestions: quizQuestions.length,
+          incorrectQuestions,
+        }),
+      });
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error ?? "Failed to get recommendations");
+      }
+
+      const data = await response.json();
+
+      setWeakAreas(Array.isArray(data.weakAreas) ? data.weakAreas : []);
+      setRevisionTopics(Array.isArray(data.revisionTopics) ? data.revisionTopics : []);
+      setStudyPlan(Array.isArray(data.studyPlan) ? data.studyPlan : []);
+    } catch (caught) {
+      setRecommendationsError(
+        caught instanceof Error ? caught.message : String(caught)
+      );
+    } finally {
+      setRecommendationsLoading(false);
+    }
+  };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 py-12 px-6 sm:px-10">
@@ -557,14 +621,92 @@ export default function UploadPage() {
                   );
                 })}
 
-                <button
-                  onClick={resetQuiz}
-                  className="w-full rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700"
-                >
-                  Retake Quiz
-                </button>
+                <div className="mt-6 space-y-4">
+                  {quizSubmitted ? (
+                    <>
+                      <button
+                        onClick={handleGetRecommendations}
+                        disabled={recommendationsLoading || !quizQuestions.length}
+                        className="w-full rounded-2xl bg-violet-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {recommendationsLoading
+                          ? "Getting Recommendations…"
+                          : "Get Recommendations"}
+                      </button>
+
+                      {recommendationsError ? (
+                        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                          {recommendationsError}
+                        </div>
+                      ) : null}
+
+                      {weakAreas.length > 0 || revisionTopics.length > 0 || studyPlan.length > 0 ? (
+                        <div className="space-y-6">
+                          <div className="rounded-2xl border border-violet-200 bg-violet-50 p-6">
+                            <h3 className="text-lg font-semibold text-violet-900">
+                              Weak Areas
+                            </h3>
+                            {weakAreas.length ? (
+                              <ul className="mt-3 list-disc pl-5 text-sm text-violet-900 space-y-1">
+                                {weakAreas.map((a, i) => (
+                                  <li key={i}>{a}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="mt-3 text-sm text-violet-800">
+                                No specific weak areas found.
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-6">
+                            <h3 className="text-lg font-semibold text-indigo-900">
+                              Topics To Revise
+                            </h3>
+                            {revisionTopics.length ? (
+                              <ul className="mt-3 list-disc pl-5 text-sm text-indigo-900 space-y-1">
+                                {revisionTopics.map((t, i) => (
+                                  <li key={i}>{t}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="mt-3 text-sm text-indigo-800">
+                                No revision topics found.
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6">
+                            <h3 className="text-lg font-semibold text-emerald-900">
+                              Study Plan
+                            </h3>
+                            {studyPlan.length ? (
+                              <ol className="mt-3 list-decimal pl-5 text-sm text-emerald-900 space-y-1">
+                                {studyPlan.map((s, i) => (
+                                  <li key={i}>{s}</li>
+                                ))}
+                              </ol>
+                            ) : (
+                              <p className="mt-3 text-sm text-emerald-800">
+                                No study plan generated.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  <button
+                    onClick={resetQuiz}
+                    className="w-full rounded-2xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                  >
+                    Retake Quiz
+                  </button>
+                </div>
               </div>
             ) : quizLoading ? (
+
               <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center text-slate-600">
                 <div className="flex items-center justify-center gap-2">
                   <div className="h-2 w-2 animate-pulse rounded-full bg-slate-400"></div>

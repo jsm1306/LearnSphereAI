@@ -1,9 +1,7 @@
 import type { NextRequest } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { generateAIResponse } from "@/lib/ai";
 
 export const runtime = "nodejs";
-
-const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 export interface QuizQuestion {
   question: string;
@@ -20,13 +18,6 @@ export interface QuizResponse {
 }
 
 export async function POST(request: NextRequest) {
-  if (!process.env.GEMINI_API_KEY) {
-    return Response.json(
-      { error: "GEMINI_API_KEY is not configured" },
-      { status: 500 }
-    );
-  }
-
   let body: QuizRequest;
 
   try {
@@ -48,8 +39,6 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const model = client.getGenerativeModel({ model: "gemini-2.5-flash" });
-
     const systemPrompt = `You are an expert educator creating multiple-choice quiz questions from study materials.
 
 Return ONLY valid JSON.
@@ -88,40 +77,29 @@ ${documentText}
 
 Remember: Return ONLY the JSON object, no other text.`;
 
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: userPrompt }],
-        },
-      ],
-      systemInstruction: systemPrompt,
-    });
+    const prompt = `${systemPrompt}\n\n${userPrompt}`;
 
-    const responseText =
-      result.response.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const result = await generateAIResponse(prompt);
+
+    const responseText = result.text;
 
     if (!responseText) {
       return Response.json(
-        { error: "Failed to generate quiz from Gemini" },
+        { error: "Failed to generate quiz" },
         { status: 500 }
       );
     }
 
-    // Log raw Gemini output before parsing
-    console.log("[Gemini quiz raw output]", responseText);
+    console.log("[AI quiz raw output]", responseText);
 
-    const extractJsonFromGemini = (text: string): string => {
+    const extractJsonFromAI = (text: string): string => {
       const trimmed = text.trim();
 
-      // 1) Remove markdown code fences if present
-      // Handles ```json ... ``` and ``` ... ```
       const withoutFences = trimmed.replace(
         /```(?:json)?\s*([\s\S]*?)\s*```/gi,
         (_match, inner) => String(inner ?? "")
       );
 
-      // 2) Try to extract the first JSON object
       const firstBrace = withoutFences.indexOf("{");
       const lastBrace = withoutFences.lastIndexOf("}");
 
@@ -129,13 +107,11 @@ Remember: Return ONLY the JSON object, no other text.`;
         return withoutFences.slice(firstBrace, lastBrace + 1).trim();
       }
 
-      // Fallback: use the whole string
       return withoutFences.trim();
     };
 
-    const jsonCandidate = extractJsonFromGemini(responseText);
+    const jsonCandidate = extractJsonFromAI(responseText);
 
-    // 4) Parse safely
     let quizData: QuizResponse;
     try {
       const parsed = JSON.parse(jsonCandidate) as QuizResponse;
@@ -146,10 +122,9 @@ Remember: Return ONLY the JSON object, no other text.`;
 
       return Response.json(
         {
-          error: "Failed to parse quiz response from Gemini",
+          error: "Failed to parse quiz response",
           details: {
             errorMessage,
-            // 5) Return detailed error messages if parsing fails
             jsonCandidatePreview: jsonCandidate.slice(0, 500),
           },
         },
@@ -157,7 +132,6 @@ Remember: Return ONLY the JSON object, no other text.`;
       );
     }
 
-    // Basic shape validation
     if (!quizData?.questions || !Array.isArray(quizData.questions)) {
       return Response.json(
         {
@@ -181,3 +155,4 @@ Remember: Return ONLY the JSON object, no other text.`;
     );
   }
 }
+

@@ -1,9 +1,7 @@
 import type { NextRequest } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { generateAIResponse } from "@/lib/ai";
 
 export const runtime = "nodejs";
-
-const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 export interface ChatRequest {
   documentText: string;
@@ -15,13 +13,6 @@ export interface ChatResponse {
 }
 
 export async function POST(request: NextRequest) {
-  if (!process.env.GEMINI_API_KEY) {
-    return Response.json(
-      { error: "GEMINI_API_KEY is not configured" },
-      { status: 500 }
-    );
-  }
-
   let body: ChatRequest;
 
   try {
@@ -50,8 +41,6 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const model = client.getGenerativeModel({ model: "gemini-2.5-flash" });
-
     const systemPrompt = `You are a study assistant.
 
 Use only the provided study material to answer the student's question.
@@ -68,28 +57,19 @@ ${question}
 
 Please provide a clear educational answer based only on the study material provided above.`;
 
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: userPrompt }],
-        },
-      ],
-      systemInstruction: systemPrompt,
-    });
+    const prompt = `${systemPrompt}\n\n${userPrompt}`;
 
-    const responseText =
-      result.response.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const result = await generateAIResponse(prompt);
 
-    if (!responseText) {
+    if (!result.text) {
       return Response.json(
-        { error: "Failed to generate response from Gemini" },
+        { error: "Failed to generate response" },
         { status: 500 }
       );
     }
 
     const response: ChatResponse = {
-      answer: responseText,
+      answer: result.text,
     };
 
     return Response.json(response);
@@ -103,3 +83,4 @@ Please provide a clear educational answer based only on the study material provi
     );
   }
 }
+
