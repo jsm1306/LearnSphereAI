@@ -1,18 +1,15 @@
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
-import { join } from "path";
-import { pathToFileURL } from "url";
 
-// Set up worker for Node.js environment using local file
-if (typeof pdfjsLib.GlobalWorkerOptions !== "undefined") {
-  const workerPath = join(process.cwd(), "node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs");
-  pdfjsLib.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href;
-}
-
+// Vercel/serverless-safe: do NOT point the worker to a local node_modules path.
+// pdfjs-dist can fail if we hardcode filesystem URLs to the worker.
+// We keep extraction entirely in-memory from the provided Buffer.
+// If the worker is unavailable, pdfjs will fall back (or run in a degraded mode).
 
 export interface ExtractedPdf {
   pageCount: number;
   text: string;
 }
+
 
 /**
  * Extract text from all pages of a PDF buffer
@@ -22,9 +19,12 @@ export interface ExtractedPdf {
 export async function extractPdfText(buffer: Buffer): Promise<ExtractedPdf> {
   try {
     const uint8Array = new Uint8Array(buffer);
-    
-    // Load PDF document
-    const pdf = await pdfjsLib.getDocument({ data: uint8Array }).promise;
+
+    // Load PDF document (in-memory). Do not rely on filesystem.
+    const pdf = await pdfjsLib
+      .getDocument({ data: uint8Array })
+      .promise;
+
     
     const pageCount = pdf.numPages;
     const textContent: string[] = [];

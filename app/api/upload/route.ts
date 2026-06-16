@@ -7,6 +7,8 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const file = formData.get("file");
 
+  const requestId = crypto.randomUUID();
+
   if (
     !file ||
     typeof file !== "object" ||
@@ -14,39 +16,73 @@ export async function POST(request: NextRequest) {
     typeof (file as any).arrayBuffer !== "function"
   ) {
     return Response.json(
-      { success: false, message: "No file was uploaded." },
+      { success: false, message: "No file was uploaded.", requestId },
       { status: 400 }
     );
   }
 
-  const fileType = (file as any).type ?? "";
+  const fileAny = file as any;
+  const fileType = fileAny.type ?? "";
+  const fileName = fileAny.name ?? "(unknown)";
+  const fileSize = typeof fileAny.size === "number" ? fileAny.size : null;
+
+  console.log("[UPLOAD] received", {
+    requestId,
+    fileName,
+    fileType,
+    fileSize,
+  });
 
   if (fileType !== "application/pdf") {
     return Response.json(
-      { success: false, message: "Uploaded file must be a PDF." },
+      {
+        success: false,
+        message: "Uploaded file must be a PDF.",
+        requestId,
+        fileType,
+      },
       { status: 400 }
     );
   }
 
-  const arrayBuffer = await (file as any).arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-
   try {
+    const arrayBuffer = await fileAny.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    console.log("[UPLOAD] buffer ready", {
+      requestId,
+      bytes: buffer.byteLength,
+    });
+
     const { pageCount, text } = await extractPdfText(buffer);
 
     return Response.json({
       success: true,
       pageCount,
       text,
+      requestId,
     });
   } catch (error) {
+    console.error("UPLOAD ERROR", {
+      requestId,
+      error,
+    });
+
     const message =
       error instanceof Error ? error.message : String(error ?? "Unknown error");
 
+    const isProd = process.env.NODE_ENV === "production";
+
     return Response.json(
-      { success: false, message },
+      {
+        success: false,
+        message,
+        ...(isProd ? null : { error: message, stack: (error as any)?.stack }),
+        requestId,
+      },
       { status: 500 }
     );
   }
 }
+
 
